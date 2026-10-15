@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>.xG — виджет сообщества</title>
+<style>
+:root{--night:#0B0C0B;--graphite:#171917;--line:#2F322F;--chalk:#EDEDE6;--neon:#C6FF2E;--muted:#9a9d97}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--night);color:var(--chalk);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:28px 18px 60px}
+.wrap{max-width:720px;margin:0 auto}
+.logo{display:flex;align-items:flex-end;font-weight:900;font-size:44px;letter-spacing:-.05em;line-height:.8}
+.logo i{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--neon);margin:0 -1px 4px 0;box-shadow:0 0 14px rgba(198,255,46,.6)}
+.kick{font:12px/1 ui-monospace,"DejaVu Sans Mono",monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--neon);margin:18px 0 6px}
+h1{font-size:26px;font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
+p.lead{color:var(--muted);margin-bottom:22px}
+.card{background:var(--graphite);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+.card h2{font-size:16px;font-weight:700;margin-bottom:10px;display:flex;gap:10px;align-items:center}
+.card h2 b{font:12px/1 ui-monospace,monospace;color:var(--night);background:var(--neon);border-radius:6px;padding:4px 7px}
+button{font:inherit;font-weight:700;background:var(--neon);color:var(--night);border:0;border-radius:10px;padding:11px 16px;cursor:pointer}
+button.ghost{background:transparent;color:var(--chalk);border:1px solid var(--line)}
+button:disabled{opacity:.4;cursor:default}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input[type=text],textarea{width:100%;background:var(--night);color:var(--chalk);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:13px/1.4 ui-monospace,monospace}
+textarea{min-height:150px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--night)}
+.tile .n{font:11px ui-monospace,monospace;color:var(--neon);letter-spacing:.12em}
+.tile form{margin-top:8px}
+.tile input[type=file]{width:100%;font-size:12px;color:var(--muted)}
+.tile button{width:100%;margin-top:8px;padding:8px}
+.status{font:13px/1.45 ui-monospace,monospace;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-top:10px}
+.ok{color:var(--neon)}.err{color:#ff7a6b}
+.hide{display:none}
+@media(max-width:600px){.tiles{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo"><i></i>xG</div>
+  <div class="kick">Футбольный квиз · Краснодар</div>
+  <h1>Виджет сообщества</h1>
+  <p class="lead" id="lead">Служебное приложение для настройки виджета с тремя плитками на странице сообщества.</p>
+
+  <!-- Режим 1: внутри ВКонтакте — получаем доступ -->
+  <div class="card hide" id="modeVk">
+    <h2><b>1</b>Доступ к виджету</h2>
+    <p class="lead" style="margin-bottom:12px">Нажмите кнопку и подтвердите разрешение «Виджеты сообщества». После этого откроется страница настройки.</p>
+    <button id="btnToken">Разрешить доступ</button>
+    <div class="status" id="stVk"></div>
+  </div>
+
+  <!-- Режим 2: страница настройки -->
+  <div id="modeSetup" class="hide">
+    <div class="card">
+      <h2><b>1</b>Доступ</h2>
+      <div class="status ok" id="stAuth"></div>
+      <div class="row" style="margin-top:10px"><button class="ghost" id="btnServer">Получить адрес загрузки</button></div>
+      <div class="status" id="stServer"></div>
+    </div>
+
+    <div class="card">
+      <h2><b>2</b>Картинки плиток · 480×720</h2>
+      <div class="tiles" id="tiles"></div>
+      <p class="lead" style="margin:12px 0 0;font-size:13px">После отправки откроется вкладка с ответом сервера. Скопируйте его в поле под плиткой.</p>
+    </div>
+
+    <div class="card">
+      <h2><b>3</b>Виджет</h2>
+      <label>Код виджета (VKScript)</label>
+      <textarea id="code"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="btnUpdate">Опубликовать виджет</button>
+      </div>
+      <div class="status" id="stUpdate"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/@vkontakte/vk-bridge@2.15.5/dist/browser.min.js"></script>
+<script>
+const V = '5.199';
+const GROUP_DEFAULT = 242323022;
+const TILES = [
+  {key:'raspisanie', title:'Расписание', descr:'Первая игра — скоро', url:'https://vk.com/wall-242323022_4'},
+  {key:'pravila',    title:'Правила игры', descr:'Как играть в .xG', url:'https://vk.com/wall-242323022_2'},
+  {key:'sygray',     title:'Сыграй сейчас', descr:'Вопрос недели', url:'https://vk.com/wall-242323022_3'}
+];
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+const hs = new URLSearchParams(location.hash.slice(1));
+
+// ---------- JSONP-вызов API ----------
+let cbN = 0;
+function api(method, params){
+  return new Promise((res, rej) => {
+    const name = '__vkcb' + (++cbN);
+    const s = document.createElement('script');
+    const p = new URLSearchParams(Object.assign({}, params, {v:V, callback:name}));
+    window[name] = d => { delete window[name]; s.remove(); d.error ? rej(d.error) : res(d.response); };
+    s.onerror = () => { delete window[name]; rej({error_msg:'сеть'}); };
+    s.src = 'https://api.vk.com/method/' + method + '?' + p.toString();
+    document.body.appendChild(s);
+  });
+}
+const errText = e => (e && (e.error_msg || e.error_code)) ? `Ошибка ${e.error_code||''}: ${e.error_msg||''}` : String(e);
+
+// ---------- Режим 1: внутри ВК ----------
+if (qs.get('vk_app_id')) {
+  $('modeVk').classList.remove('hide');
+  vkBridge.send('VKWebAppInit');
+  const appId = +qs.get('vk_app_id');
+  const groupId = +(qs.get('vk_group_id') || GROUP_DEFAULT);
+  $('btnToken').onclick = async () => {
+    $('stVk').textContent = 'Запрашиваю разрешение…';
+    try {
+      const r = await vkBridge.send('VKWebAppGetCommunityToken', {app_id: appId, group_id: groupId, scope: 'app_widget'});
+      const url = location.origin + location.pathname + '#token=' + encodeURIComponent(r.access_token) + '&gid=' + groupId;
+      $('stVk').innerHTML = '<span class="ok">Доступ получен.</span> Открываю страницу настройки…';
+      window.open(url, '_blank');
+      $('stVk').innerHTML += '\nЕсли вкладка не открылась: <a style="color:#C6FF2E" target="_blank" href="'+url+'">открыть настройку</a>';
+    } catch (e) {
+      $('stVk').innerHTML = '<span class="err">Не удалось: ' + JSON.stringify(e.error_data || e) + '</span>';
+    }
+  };
+}
+
+// ---------- Режим 2: настройка ----------
+else if (hs.get('token')) {
+  const token = hs.get('token');
+  const gid = +(hs.get('gid') || GROUP_DEFAULT);
+  $('lead').textContent = 'Сообщество id ' + gid + '. Загрузите картинки плиток и опубликуйте виджет.';
+  $('modeSetup').classList.remove('hide');
+  $('stAuth').textContent = 'Токен сообщества получен ✓';
+  let uploadUrl = '';
+
+  // плитки
+  $('tiles').innerHTML = TILES.map((t,i) => `
+    <div class="tile">
+      <div class="n">ПЛИТКА 0${i+1}</div>
+      <div style="font-weight:700;margin-top:4px">${t.title}</div>
+      <form method="post" enctype="multipart/form-data" target="_blank" id="f_${t.key}">
+        <input type="file" name="image" accept="image/*" id="file_${t.key}">
+        <button type="submit" class="ghost" disabled id="send_${t.key}">Отправить</button>
+      </form>
+      <label>Ответ сервера</label>
+      <input type="text" id="resp_${t.key}" placeholder='{"hash":"…","image":"…"}'>
+      <button class="ghost" id="save_${t.key}">Сохранить</button>
+      <div class="status" id="st_${t.key}"></div>
+      <input type="hidden" id="icon_${t.key}">
+    </div>`).join('');
+
+  $('btnServer').onclick = async () => {
+    $('stServer').textContent = 'Запрашиваю…';
+    try {
+      const r = await api('appWidgets.getGroupImageUploadServer', {image_type:'160x240', access_token: token});
+      uploadUrl = r.upload_url;
+      TILES.forEach(t => { $('f_'+t.key).action = uploadUrl; $('send_'+t.key).disabled = false; });
+      $('stServer').innerHTML = '<span class="ok">Адрес загрузки получен ✓</span>';
+    } catch(e){ $('stServer').innerHTML = '<span class="err">'+errText(e)+'</span>'; }
+  };
+
+  TILES.forEach(t => {
+    $('save_'+t.key).onclick = async () => {
+      const st = $('st_'+t.key);
+      try {
+        const j = JSON.parse($('resp_'+t.key).value.trim());
+        const r = await api('appWidgets.saveGroupImage', {hash:j.hash, image:j.image, access_token: token});
+        $('icon_'+t.key).value = r.id;
+        st.innerHTML = '<span class="ok">Сохранено: ' + r.id + '</span>';
+        buildCode();
+      } catch(e){ st.innerHTML = '<span class="err">'+(e instanceof SyntaxError ? 'Ответ не похож на JSON' : errText(e))+'</span>'; }
+    };
+  });
+
+  function buildCode(){
+    const tiles = TILES.map(t => ({
+      title: t.title, descr: t.descr, url: t.url,
+      link: 'Открыть', link_url: t.url,
+      icon_id: $('icon_'+t.key).value || ''
+    }));
+    const w = {
+      title: 'Футбольный квиз .xG',
+      tiles: tiles,
+      more: 'Записаться на игру',
+      more_url: 'https://vk.com/app5619682_-242323022'
+    };
+    $('code').value = 'return ' + JSON.stringify(w, null, 2) + ';';
+  }
+  buildCode();
+
+  $('btnUpdate').onclick = async () => {
+    $('stUpdate').textContent = 'Публикую…';
+    try {
+      const r = await api('appWidgets.update', {type:'tiles', code: $('code').value, access_token: token});
+      $('stUpdate').innerHTML = '<span class="ok">Виджет опубликован ✓ (' + JSON.stringify(r) + ')</span>';
+    } catch(e){ $('stUpdate').innerHTML = '<span class="err">'+errText(e)+'</span>'; }
+  };
+}
+else {
+  $('lead').textContent += ' Откройте его из меню сообщества ВКонтакте.';
+}
+</script>
+</body>
+</html>
